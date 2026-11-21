@@ -1265,12 +1265,13 @@ jobs:
 
           cp "$LZ4KD_PATCH" ./lz4kd.patch
           if ! patch -p1 -F 3 < lz4kd.patch; then
-            echo "::warning::lz4kd.patch 应用失败，可能已应用或上下文不匹配"
+            # 补丁没进内核就不要继续，否则编出来仍是 lzo
+            zram_step_fail "lz4kd.patch 应用失败"
           fi
 
           cp "$LZ4K_OPLUS_PATCH" ./lz4k_oplus.patch
           if ! patch -p1 -F 3 < lz4k_oplus.patch; then
-            echo "::warning::lz4k_oplus.patch 应用失败，可能已应用或上下文不匹配"
+            zram_step_fail "lz4k_oplus.patch 应用失败"
           fi
 
       - name: 修复 6.6 WiFi/蓝牙兼容性（三星 + 小米）
@@ -1342,9 +1343,15 @@ jobs:
           CONFIG_ZRAM=y
           CONFIG_MODULE_SIG=n
           CONFIG_CRYPTO_LZO=y
-          CONFIG_ZRAM_DEF_COMP_LZ4KD=y
           EOF
           fi
+
+          # 原仓库仅在 5.10 分支设置默认算法，5.15/6.1/6.6 全部沿用
+          # GKI 默认的 lzo-rle/lzo —— 这是刷机后仍显示 lzo 的主因。
+          # 所有 5.10~6.6 内核统一显式设为 lz4kd；先清掉 choice 里的旧值，
+          # 避免 bazel kernel_config 因同一个 choice 出现多个 y 而校验失败。
+          sed -i '/^CONFIG_ZRAM_DEF_COMP_/d' "$CONFIG_FILE"
+          echo "CONFIG_ZRAM_DEF_COMP_LZ4KD=y" >> "$CONFIG_FILE"
 
           if [ "${{ inputs.kernel_version }}" != "6.6" ] && [ "${{ inputs.kernel_version }}" != "5.10" ]; then
             if grep -q "CONFIG_ZSMALLOC" "$CONFIG_FILE"; then
